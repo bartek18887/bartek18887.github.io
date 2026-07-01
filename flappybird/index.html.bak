@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="">
+<head>
+	<meta charset="utf-8">
+	<title>Flappy Bird</title>
+
+	<style>
+		body {
+			background-color: gray;
+
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			transform: translate(-50%, -50%);
+
+
+			margin: 0;
+			overflow: hidden;
+		}
+		
+		#gamecanvas {
+			background-color: skyblue;
+			width: 100vw;
+			max-width: 100vw;
+			max-height: 100vh;
+		}
+
+		#gamecontainer {
+			position: relative;
+			display: block;
+
+			width: min-content;
+		}
+
+		#scoredisplay {
+			position: absolute;
+			font-family: monospace;
+			font-size: 2em;
+			
+			top: 10px;
+			left: 50%;
+			transform: translateX(-50%);
+
+			background-color: rgba(0,0,0,0.4);
+			color: white;
+			padding: 8px 24px;
+		}
+
+		#endscreen {
+			font-family: sans-serif;
+			border: 4px black solid;
+			background-color: rgb(121, 72, 0);
+			color: white;
+		
+			width: 10em;
+			text-align: center;
+			padding: 24px;
+		}
+		#endscreen::backdrop {
+			background-color: rgba(0,0,0,0.35);
+		}
+
+		.birdbutton {
+			padding: 16px;
+			font-size: 1.25em;
+			font-family: monospace;
+
+			background-color: rgb(222, 184, 135);
+			border: 2px black solid;
+			transition: background-color 0.05s, transform 0.1s;
+		}
+		.birdbutton:hover {
+			background-color: rgb(255, 209, 148);
+			transform: scale(1.1);
+		}
+		.birdbutton:active {
+			background-color: rgb(150, 120, 82);
+			transform: scale(0.9);
+		}
+
+		#startscreen {
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			transform: translate(-50%, -50%);
+
+			font-family: monospace;
+
+			background-color: rgba(0,0,0,0.6);
+			color: white;
+			padding: 32px;
+
+			pointer-events: none;
+		}
+		#startscreen header {
+			font-weight: bold;
+			font-size: 2em;
+		}
+
+	</style>
+</head>
+<body>
+	<div id="gamecontainer">
+		<canvas width="1280" height="720" id="gamecanvas">
+		</canvas>
+		<span id="scoredisplay">0</span>
+		<div id="endscreen" popover="manual">
+			<span>Your Score: </span><span id="endscreen_score">67</span> <br>
+			<span>High Score: </span><span id="endscreen_highscore">420</span>
+			<br><br>
+			<center><button id="playagainbtn" onclick="reset(false)" class="birdbutton">Play Again!</button></center>
+		</div>
+
+		<div id="startscreen">
+			<center>
+				<header>FLAPPY BIRD</header>
+				<span>HTML Edition</span>
+				<br><br>
+				<p>Tap to jump, Avoid the pipes.</p>
+				<p>Tap anywhere to start.</p>
+			</center>
+		</div>
+	</div>
+	<div style="display: none">
+		<audio id="snd_gameover"><source src="sfx/game_over.wav" type="audio/wav"></audio>
+		<audio id="snd_land"><source src="sfx/ground_impact.wav" type="audio/wav"></audio>
+		<audio id="snd_jump"><source src="sfx/jump.wav" type="audio/wav"></audio>
+		<audio id="snd_scored"><source src="sfx/score.wav" type="audio/wav"></audio>
+		<audio id="snd_counter"><source src="sfx/counter.wav" type="audio/wav"></audio>
+
+		<img id="img_player" src="img/player.png">
+		<img id="img_pipe" src="img/pipe.png">
+		<img id="img_cloud" src="img/cloud.png">
+	</div>
+
+	<script>
+
+// ==== Constants
+const PLR_LEFT_OFFSET = 120
+const TERMINAL_VELOCITY = 1000
+const GROUND_HEIGHT = 125
+const GRASS_SIZE = 15
+const GRAVITY = 1750
+const JUMP_STRENGTH = 500
+
+const PLR_WIDTH = 40
+const PLR_HEIGHT = 30
+const PLR_LENIENCY = 10 // how much is the player's hitbox shrunk by. Both sides, so doubled.
+const PLR_SPRITESIZE = 40
+
+const PIPE_BASE_SPEED = 250
+const PIPE_WIDTH = 55
+const PIPE_GAP = 120
+const PIPE_SPAWN_TIME = 2
+const SHAKE_EVERY = 0.04 // TODO
+const EDGE_PADDING = 150 // distance between top/bottom. Bottom has GROUND_HEIGHT additionally.
+
+const CAMSHAKE_STRENGTH = 8
+
+// let so you can change in browser console
+let DEBUG_SPAWN_ALWAYS = false
+let DEBUG_GODMODE = false
+let DEBUG_CLOSESPAWN = false
+let DEBUG_DRAW_HITBOXES = true
+
+const ENDSCREEN_DELAY = 2000
+const ENDSCREEN_DELAY_GROUND = 1250
+const ENDSCREEN_COUNTER_DELAY = 500
+const ENDSCREEN_COUNTER_TIMER = 40
+const ENDSCREEN_HIGHSCORE_DELAY = 500
+
+const asset = {
+	"sfx": {
+		"gameover": document.getElementById("snd_gameover"),
+		"land": document.getElementById("snd_land"),
+		"jump": document.getElementById("snd_jump"),
+		"scored": document.getElementById("snd_scored"),
+		"counter": document.getElementById("snd_counter"),
+	},
+	"img": {
+		"player": document.getElementById("img_player"),
+		"pipe": document.getElementById("img_pipe"),
+	}
+}
+
+const sprites = {}
+
+// TODO: Move into sprites
+// Loaded from img/player_anim.json, this only serves as a fallback. (and documentation for the in-memory format, not the json one)
+let plr_spritedata = {
+	"width": 1,
+	"height": 1,
+	"scale": 0,
+	"animations": {
+		"default": {"loop": false, "frames": [{"x": 0, "y": 0, "duration": 1}]}
+	}
+}
+
+// ===== Game State
+let gameTime = 0
+let gameTime_raw = 0
+
+let pipes = []
+
+let game = {
+	"started": false, // player stays around the center. Death is handled by player.dead
+	"score": 0,
+	"deadFor": 0
+}
+
+let prevHighScore = 0
+let highScore = 0
+
+let timeScale = 1
+let paused = false
+
+let pipeTimer = PIPE_SPAWN_TIME
+let whiteout = 0
+let shakeFor = 0
+
+let player = {
+	"y": 0,
+	"velocity": 0.0,
+	"dead": false,
+	"grounded": false,
+	"anim": {
+		"name": "default",
+		"frame": 0,
+		"frameSwitchedTime": 0,
+	}
+}
+
+function playerPlayAnim(animname) {
+	player.anim.name = animname
+	player.anim.frame = 0
+	player.anim.frameSwitchedTime = gameTime
+}
+
+function playerUpdateAnim(dt) {
+	let animdata = plr_spritedata.animations[player.anim.name]
+	
+	if (animdata == undefined) {
+		console.warn(`Animation ${player.anim.name} doesn't exist! Going back to default.`)
+		playerPlayAnim("default")
+	}
+
+	let framedata = animdata.frames[Math.min(player.anim.frame, animdata.frames.length - 1)]
+	
+	let frameHeldFor = gameTime - player.anim.frameSwitchedTime
+	if (frameHeldFor >= framedata.duration) {
+		player.anim.frame += 1
+		if (animdata.loop == true && player.anim.frame >= animdata.frames.length) {
+			player.anim.frame = 0
+		}
+		player.anim.frame = Math.min(animdata.frames.length - 1, player.anim.frame)
+		player.anim.frameSwitchedTime = gameTime
+	}
+}
+
+function playerGetFrame() {
+	let animdata = plr_spritedata.animations[player.anim.name] // should exist here as playerUpdateAnim will run first.
+	let framedata = animdata.frames[Math.min(player.anim.frame, animdata.frames.length - 1)]
+
+	return {"x": framedata.x, "y": framedata.y}
+}
+
+
+function parseFloatStrict(val, errormsg) {
+	let result = parseFloat(val)
+	if (result == NaN || val == undefined) {
+		throw new Error(errormsg == undefined ? "Value passed to parseFloatStrict isn't a number." : errormsg)
+	}
+	return result
+}
+
+function playSfx(sound, pitch) {
+	if (!(sound instanceof HTMLAudioElement)) {
+		throw new Error("Sound isnt an audio element!")
+		return
+	}
+
+	if (pitch != undefined && pitch != null) {
+		sound.playbackRate = pitch
+	}
+	sound.currentTime = 0
+	sound.play()
+}
+
+// https://stackoverflow.com/a/43155027
+// modified to add spritesheet capabilities
+function drawImageCenter(ctx, image, x, y, cx, cy, scale, rotation, srcX, srcY, width, height){
+    let prevTransform = ctx.getTransform()
+	
+	ctx.transform(scale, 0, 0, scale, x, y); // sets scale and origin
+    ctx.rotate(rotation);
+	ctx.drawImage(image, srcX, srcY, width, height, -cx, -cy, width, height)
+	ctx.setTransform(prevTransform)
+}
+
+function makePipe(y) {
+	let x = canvas.width + PIPE_WIDTH
+	if (DEBUG_CLOSESPAWN) {
+		x -= canvas.width / 2
+	}
+
+	let pipe =  {
+		"x": x,
+		"y": y,
+		"scored": false,
+	}
+	pipes.push(pipe)
+	return pipe
+}
+
+function reset(_) {
+
+	game.started = false
+	game.score = 0
+	game.deadFor = 0
+	
+	player.y = canvas.height / 2.0
+	player.velocity = 0
+	player.dead = false
+	player.grounded = false
+
+	playerPlayAnim("flap")
+
+	el_score.innerText = game.score
+
+	pipes = []
+	el_endscreen.hidePopover()
+	el_startscreen.style.visibility = "visible"
+}
+
+function kill(launch, slowdown) {
+	if (player.dead || DEBUG_GODMODE) {
+		return
+	}
+
+	if (launch) {
+		player.velocity = -JUMP_STRENGTH * 1.1
+	} else {
+		player.velocity = 0
+	}
+	player.dead = true
+
+	if (slowdown) {
+		timeScale = 0.2
+		whiteout = 1
+		shakeFor = 1.5
+	} else {
+		shakeFor = 0.5
+		whiteout = 0.5
+	}
+
+	prevHighScore = highScore
+	highScore = Math.max(game.score, highScore)
+
+	playSfx(asset.sfx.gameover, 1)
+	setTimeout(showEndScreen, slowdown ? ENDSCREEN_DELAY : ENDSCREEN_DELAY_GROUND)
+}
+
+let camX = 0
+let camY = 0
+
+let el_score = document.getElementById("scoredisplay")
+let el_startscreen = document.getElementById("startscreen")
+let el_endscreen = document.getElementById("endscreen")
+let el_endscreen_score = document.getElementById("endscreen_score")
+let el_endscreen_highscore = document.getElementById("endscreen_highscore")
+
+let updateShakeAfter = 0
+
+
+let score_endVisual = 0
+function showEndScreen() {
+	el_endscreen.showPopover()
+	el_endscreen_score.innerText = 0
+	el_endscreen_highscore.innerText = highScore
+	
+	score_endVisual = 0
+	setTimeout(function() {
+		incrementEndScore()
+	}, ENDSCREEN_COUNTER_DELAY)
+}
+
+function incrementEndScore() {
+	score_endVisual += 1
+	let cont = true
+
+	if (score_endVisual >= game.score) {
+		score_endVisual = game.score
+		cont = false
+		setTimeout(function() {
+			if (game.score > highScore) {
+				playSfx(asset.sfx.scored)
+			}
+			el_endscreen_highscore.innerText = highScore
+		}, ENDSCREEN_HIGHSCORE_DELAY)
+	}
+
+	el_endscreen_score.innerText = score_endVisual
+	if (cont) {
+		// playSfx(sfx_counter, 1, true)
+		// Cannot be done without lagging, since too many sounds are playing at once.
+		// (3rd argument was playing audio quickly by duplicating it. It caused too much lag so I removed it.)
+		setTimeout(incrementEndScore, ENDSCREEN_COUNTER_TIMER)
+	}
+}
+
+function update(dt, dtRaw, timestamp) {
+	if (!(ctx instanceof CanvasRenderingContext2D)) {return} // making sure I get autocompletion.
+	ctx.clearRect(0, 0, canvas.width, canvas.height)
+	let dirty = false
+
+	if (DEBUG_SPAWN_ALWAYS || (game.started && !player.dead && !paused)) {
+		pipeTimer -= dt
+		if (pipeTimer <= 0) {
+			makePipe(Math.random() * (canvas.height - (EDGE_PADDING * 2) - GROUND_HEIGHT) + EDGE_PADDING)
+			pipeTimer += PIPE_SPAWN_TIME
+		}
+	}
+
+	playerUpdateAnim(dt)
+
+	whiteout = Math.max(whiteout - 1.2 * dtRaw, 0)
+	if (player.dead && timeScale < 1) {
+		const add = (timeScale + 0.001) * 0.025
+		timeScale = Math.min(1, timeScale + add)
+	}
+
+	if (!game.started) {
+		if (player.y >= (canvas.height / 2) + (JUMP_STRENGTH / 8)) {
+			jump()
+		}
+	}
+
+	if (!player.grounded && !paused) {
+		player.velocity += GRAVITY * dt
+		player.velocity = Math.min(player.velocity, TERMINAL_VELOCITY)
+		player.y += player.velocity * dt
+	}
+
+	shakeFor -= dtRaw
+	if (shakeFor > 0) {
+		updateShakeAfter -= dt
+		if (updateShakeAfter <= 0) {
+			camX = Math.random() * Math.min(shakeFor, 1) * CAMSHAKE_STRENGTH
+			camY = Math.random() * Math.min(shakeFor, 1) * CAMSHAKE_STRENGTH
+			updateShakeAfter += SHAKE_EVERY
+		}
+	}
+
+	const GROUND_THRESHOLD = canvas.height - GROUND_HEIGHT - (PLR_HEIGHT / 2)
+	if (player.y >= GROUND_THRESHOLD) {
+		player.y = GROUND_THRESHOLD
+		if (!player.grounded && !DEBUG_GODMODE) {
+			kill(false, false)
+			playSfx(asset.sfx.land)
+			player.grounded = true
+			playerPlayAnim("grounded")
+		}
+	}
+
+	ctx.fillStyle = "green"
+
+	let hitPipe = false
+	pipes.forEach((pipe, i) => { // TODO: Remove pipes that are off screen.
+		// update pipe
+		if (!player.dead) {
+			pipe.x -= PIPE_BASE_SPEED * dt
+		}
+
+		if (!hitPipe && !player.dead && (
+			PLR_LEFT_OFFSET + PLR_LENIENCY < pipe.x + PIPE_WIDTH &&
+			PLR_LEFT_OFFSET + PLR_WIDTH - PLR_LENIENCY > pipe.x &&
+			(
+				player.y - (PLR_HEIGHT / 2) < pipe.y - (PIPE_GAP / 2) ||
+				player.y + (PLR_HEIGHT / 2) > pipe.y + (PIPE_GAP / 2)
+			)
+		)) {
+			hitPipe = true
+		}
+
+		if (!pipe.scored && (pipe.x + (PIPE_WIDTH / 2) <= PLR_LEFT_OFFSET + (PLR_WIDTH / 2))) {
+			game.score += 1
+			playSfx(asset.sfx.scored)
+			dirty = true
+			pipe.scored = true
+		}
+
+		// draw pipe
+		ctx.drawImage(asset.img.pipe, pipe.x, pipe.y + PIPE_GAP)
+
+		if (DEBUG_DRAW_HITBOXES) {
+			ctx.strokeStyle = "red"
+			ctx.strokeRect(pipe.x + camX, 0, PIPE_WIDTH, pipe.y - (PIPE_GAP/2) + camY)
+			ctx.strokeRect(pipe.x + camX, pipe.y + (PIPE_GAP/2) + camY, PIPE_WIDTH, canvas.height)
+		}
+	});
+
+	if (hitPipe) {
+		playerPlayAnim("hitpipe")
+		kill(true, true)
+	}
+
+	if (pipes.length >= 1) {
+		if (pipes[0].x <= -PIPE_WIDTH) {
+			pipes = pipes.slice(1)
+		}
+	}
+
+	// draw player
+	let plrCurFrame = playerGetFrame()
+
+	//ctx.setTransform(1, 0, 0, 1, -plr_spritedata.sprite_size.width, -plr_spritedata.sprite_size.height, -50, -50)
+	//ctx.rotate(gameTime * 40)
+	//ctx.translate(-PLR_LEFT_OFFSET + plr_spritedata.sprite_size.width + camX + (canvas.width / 2), player.y - plr_spritedata.sprite_size.width + camX + (canvas.height / 2))
+	//ctx.drawImage(img_player, plrCurFrame.x, plrCurFrame.y, plr_spritedata.sprite_size.width, plr_spritedata.sprite_size.height, 0, 0, PLR_SPRITESIZE, PLR_SPRITESIZE)
+	//ctx.resetTransform()
+
+
+	// drawImageCenter(ctx, image, x, y, cx, cy, scale, rotation, srcX, srcY, width, height)
+	let max_top_rotation = Math.PI * -0.125
+	let plr_rotation = Math.max(
+		max_top_rotation,
+		max_top_rotation + (Math.PI * 0.5 + -max_top_rotation) * (player.velocity / TERMINAL_VELOCITY) + (player.velocity * 2 * ((-Math.sign(player.velocity) + 1) / 2)))
+
+	if (player.grounded) {
+		plr_rotation = 0
+	}
+
+	drawImageCenter(ctx, asset.img.player,
+		PLR_LEFT_OFFSET + PLR_WIDTH / 2 + camX, player.y + camY, plr_spritedata.width / 2, plr_spritedata.height / 2, 4, plr_rotation,
+		plrCurFrame.x, plrCurFrame.y, plr_spritedata.width, plr_spritedata.height
+	)
+
+	if (DEBUG_DRAW_HITBOXES) {
+		ctx.strokeStyle = "blue"
+		ctx.strokeRect(PLR_LEFT_OFFSET + camX + PLR_LENIENCY, player.y - (PLR_HEIGHT / 2) + camY, PLR_WIDTH - PLR_LENIENCY*2, PLR_HEIGHT)
+		ctx.strokeStyle = "aqua"
+		ctx.strokeRect(PLR_LEFT_OFFSET + camX, player.y - (PLR_HEIGHT / 2) + camY, PLR_WIDTH, PLR_HEIGHT)
+	}
+
+	// draw ground
+	ctx.fillStyle = "#633b0a"
+	ctx.fillRect(0, canvas.height - GROUND_HEIGHT + camY, canvas.width, GROUND_HEIGHT)
+	ctx.fillStyle = "green"
+	ctx.fillRect(0, canvas.height - GROUND_HEIGHT + camY, canvas.width, GRASS_SIZE)
+
+	ctx.fillStyle = `rgba(255, 255, 255, ${whiteout})`
+	ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+	// HTML updating
+	if (dirty) {
+		el_score.innerText = game.score
+	}
+}
+
+
+function jump() {
+	player.velocity = -JUMP_STRENGTH
+	playSfx(asset.sfx.jump, Math.random() * 0.2 + 0.9)
+	playerPlayAnim("flap")
+}
+
+function tap(x, y) {
+	if (player.dead) {
+		return
+	}
+
+	game.started = true
+	el_startscreen.style.visibility = "hidden"
+	jump()
+}
+
+function _load_anim_error(reason) {
+	console.error("Failed to load animation file!")
+	console.error(reason)
+	alert("Failed to load player animations!")
+}
+
+function parse_animation(obj) {
+	let result = {}
+	if (!obj.sprite_size instanceof Array) {throw new Error("Animation sprite_size isn't defined or isn't a list.."); return}
+	if (obj.sprite_size.length != 2) {throw new Error("Sprite size isn't a list of 2 numbers.")}
+	if (obj.animations == undefined) {
+		console.warn("Animation animations aren't defined. Using default animations.")
+	}
+
+	result.width = obj.sprite_size[0]
+	result.height = obj.sprite_size[1]
+	result.animations = {}
+
+	result.animations.default = {"loop": false, "frames": [{"x": 0, "y": 0, "duration": 1}]}
+
+	if (obj.animations != undefined) {
+		Object.keys(obj.animations).forEach((key, i) => {
+			let anim_obj = obj.animations[key]
+			let frames = []
+			anim_obj.frames.forEach(element => {
+				frames.push({
+					"x": parseFloatStrict(element[0]),
+					"y": parseFloatStrict(element[1]),
+					"duration": 1.0 / parseFloatStrict(element[2])
+				})
+			});
+
+			result.animations[key] = {}
+			result.animations[key].loop = anim_obj.loop
+			result.animations[key].frames = frames
+		})
+	}
+
+	return result
+}
+
+fetch("img/player.json")
+		.then((resp) => {
+			resp.json() // why is this a promise
+					.catch((reason) => {
+						console.error(reason)
+						alert(`Could not parse animation JSON!\n\n${reason}`)
+					})
+					.then((animobj) => {
+						try {
+							plr_spritedata = parse_animation(animobj)
+							requestAnimationFrame(_animframe)
+						} catch(e) {
+							alert(`Failed to parse animations!\n\n${e}`)
+						}
+					})
+		}, _load_anim_error)
+		.catch(_load_anim_error)
+/////////
+
+// ===== Init Code
+
+let canvas = document.getElementById("gamecanvas")
+if (!(canvas instanceof HTMLCanvasElement)) {
+	alert("`gamecanvas` is missing or isn't a canvas.")
+	throw new Error()
+}
+
+// oops, forgot that this has to be after canvas
+canvas.onmousedown = function() {
+	tap(0, 0)
+}
+canvas.ontouchstart = function() {
+	tap(0, 0)
+}
+canvas.onkeydown = function() {
+	// TODO
+}
+
+let ctx = canvas.getContext("2d")
+if (!(ctx instanceof CanvasRenderingContext2D)) {
+	alert("Failed to get 2d rendering context!")
+	throw new Error()
+}
+
+ctx.imageSmoothingEnabled = false
+
+reset(true)
+
+let lastTstamp = -1
+function _animframe(tstamp) {
+	if (lastTstamp == -1) {
+		lastTstamp = tstamp
+	}
+	const dt = (tstamp - lastTstamp) / 1000.0
+	lastTstamp = tstamp
+
+	gameTime += dt * timeScale
+	gameTime_raw += dt
+
+	if (dt >= 0.2) { // Focus loss lagspike wont kill now
+		console.warn(`Lag spike! Frame took ${dt} (probably due to focus loss). Skipping.`)
+	} else {
+		update(dt * timeScale, dt, tstamp)
+	}
+
+	requestAnimationFrame(_animframe)
+}
+	</script>
+</body>
+</html>

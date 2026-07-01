@@ -1,0 +1,24 @@
+{
+	"sprite_size": [12, 12],
+	"scale": 4,
+
+	"_anim_framecomment": "Frame format: [source_x, source_y, duration in fps (12 becomes 1/12 so 0.0833...) UNLESS:, boolean whether to use seconds instead of frames.]",
+	"animations": {
+		"default": {
+			"loop": false,
+			"frames": [[36, 0, 1]]
+		},
+		"flap": {
+			"loop": false,
+			"frames": [[0, 0, 12], [12, 0, 12], [24, 0, 12], [36, 0, 12]]
+		},
+		"hitpipe": {
+    	    "loop": false,
+    	    "frames": [[0, 12, 1]]
+		},
+		"grounded": {
+			"loop": true,
+			"frames": [[12, 12, 2, true], [24, 12, 8]]
+		}
+	}
+}

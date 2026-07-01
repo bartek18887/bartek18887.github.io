@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width">
+	<title>Flappy Bean</title>
+	<script>
+		// Fix for html being amazing.
+		// Fixes running from a folder that isn't the root.
+		let _base = document.createElement("base")
+	
+		let root = document.location.pathname
+		if (!root.endsWith(".html")) {
+			root += "/"
+		} else {
+			alert("This cannot be ran from the HTML file due to web browser restrictions. Use a local web server instead.\n\n(If you have python, open a cmd prompt in the folder with the html file and run `python -m http.server` and open `http://localhost:8000`)")
+			// CORS blocks fetching from Javascript if not in http, so no spritesheet data.
+			// In the future I might try bundling them inside of a javascript file and parsing that?
+		}
+
+		_base.href = root
+		document.head.appendChild(_base)
+
+		// Make sure scripts execute from base. Previously it loaded script.js both from / and from /flappybird.
+		// I love how consistent html is.
+		let scripts = ["script.js", "konami.js"]
+		scripts.forEach(element => {
+			let scr = document.createElement("script")
+			scr.src = element
+			scr.async = false
+			document.head.appendChild(scr)
+		});
+
+		// This worked? lol
+	</script>
+
+	<style>
+		body {
+			background-color: gray;
+
+			margin: 0;
+			overflow: hidden;
+
+			font-family: sans-serif;
+		}
+		
+		#gamecanvas {
+			width: 100vw;
+			max-width: 100vw;
+			max-height: 100vh;
+			object-fit: contain;
+		}
+
+		#gamecontainer {
+			display: block;
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			transform: translate(-50%, -50%);
+
+			width: min-content;
+		}
+
+		#scoredisplay_bg {
+			position: absolute;
+			font-family: monospace;
+			font-size: 2em;
+			
+			top: 10px;
+			left: 50%;
+			transform: translateX(-50%);
+			text-align: center;
+
+			background-color: rgba(0,0,0,0.4);
+			color: white;
+			padding: 8px 24px;
+			
+			&:has(span[x-notzero]) {
+				padding-bottom: 0;
+			}
+		}
+		#startfrom_display {
+			font-size: 0.5em;
+			position: relative;
+			bottom: 1em;
+			max-height: 0;
+
+			&:not([x-notzero]) {
+					display: none;
+			}	
+		}
+
+		.popup, .box {
+			font-family: sans-serif;
+			border: 4px black solid;
+			background-color: rgb(133, 88, 68);
+			color: white;
+			padding: 24px;
+		}
+
+		.textcenter {
+			text-align: center;
+		}
+
+		#endscreen {
+			min-width: 20em;
+		}
+		#endscreen::backdrop {
+			background-color: rgba(0,0,0,0.5);
+		}
+
+		.birdbutton {
+			padding: 16px;
+			font-size: 1.25em;
+			font-family: monospace;
+
+			background-color: rgb(222, 184, 135);
+			border: 2px black solid;
+			transition: background-color 0.05s, transform 0.1s;
+		}
+		.birdbutton:hover {
+			background-color: rgb(255, 209, 148);
+			transform: scale(1.1);
+		}
+		.birdbutton:active {
+			background-color: rgb(150, 120, 82);
+			transform: scale(0.9);
+		}
+
+		#startscreen {
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			transform: translate(-50%, -50%);
+
+			font-family: monospace;
+			font-size: 1.35em;
+
+			background-color: rgba(0,0,0,0.6);
+			color: white;
+			padding: 32px;
+
+			pointer-events: none;
+		}
+		#startscreen header {
+			font-weight: bold;
+			font-size: 2em;
+		}
+
+		#metabuttons {
+			position: absolute;
+			right: 8px;
+			top: 8px;
+
+			& button {
+				width: 40px;
+				height: 40px;
+				padding: 0;
+
+				& img {
+					margin: 0;
+					height: 100%;
+					image-rendering: pixelated;
+				}
+			}
+		}
+
+		#startfrom_bg {
+			font-size: 0.75em;
+			pointer-events: all;
+			background-color: rgb(133, 88, 68);
+			border: 2px solid black;
+			padding: 8px;
+		}
+		#startfrom_list {
+			display: inline-block;
+			padding-top: 1em;
+		}
+		
+		#loadingscreen {
+			display: block;
+			position: fixed;
+			top: 0;
+			left: 0;
+
+			width: 100vw;
+			height: 100vh;
+
+			background-color: black;
+			color: white;
+			z-index: 10000;
+		}
+
+	</style>
+</head>
+<body>
+	<div id="gamecontainer">
+		<canvas width="1280" height="720" id="gamecanvas">
+		</canvas>
+		<div id="scoredisplay_bg"><span id="scoredisplay">0</span><br><span id="startfrom_display">+25</span></div>
+
+		<div id="metabuttons">
+			<!-- <button onclick="btn_settings()"><img src="img/ui/settings.png" alt="Settings" title="Settings" class="hide-ingame"></button> -->
+			<button onclick="btn_pause()" id="pausebutton"><img src="img/ui/pause.png" alt="Pause" title="Pause"></button>
+		</div>
+
+		<div id="startscreen">
+			<center>
+				<header>FLAPPY BEAN</header>
+				<span>HTML Edition</span>
+				<br><br>
+				<p>Tap to jump, Avoid the pipes.</p>
+				<p>Tap anywhere to start.</p>
+			</center>
+			<hr>
+			<div id="startfrom_bg" class="box">
+				<span>High Score: <span id="start_highscore">Loading...</span></span> <br>
+				<span>Start from: <div id="startfrom_list">
+					<input type="radio" name="which" checked>Beginning</input> <br>
+					<input type="radio" name="which">25 (requires 100)</input> <br>
+					<input type="radio" name="which">50 (requires 200)</input> <br>
+					<input type="radio" name="which" disabled>100 (requires 599)</input> <br>
+					<input type="radio" name="which" disabled>(TEST DATA. NOT ACCURATE)</input> <br>
+				</div></span>
+			</div>
+		</div>
+	</div>
+
+	<div id="endscreen" class="popup textcenter" popover="manual">
+		<img src="img/ui/gameover.png" alt="" style="width: 100%; image-rendering: pixelated;">
+		<h1 style="margin-top: 10px;">GAME OVER</h1>
+
+		<span>Your Score: </span><span id="endscreen_score">67</span> <br>
+		<span>High Score: </span><span id="endscreen_highscore">420</span> <br><br>
+		<span>Started from <span id="endscreen_startfrom">the beginning</span>.</span>
+		<br><br>
+		<center><button id="playagainbtn" onclick="reset(false)" class="birdbutton">Play Again!</button>
+		<br> <span style="font-size: 0.75em">or click R</span>
+		</center>
+	</div>
+
+	<div id="pausescreen" class="popup textcenter" popover="manual">
+		<h1 style="margin-top: 8px">PAUSED</h1>
+		<button onclick="btn_pause()" class="birdbutton">Unpause</button>
+	</div>
+
+	<div style="display: none">
+		<audio id="snd_gameover"><source src="./sfx/game_over.wav" type="audio/wav"></audio>
+		<audio id="snd_land"><source src="./sfx/ground_impact.wav" type="audio/wav"></audio>
+		<audio id="snd_jump"><source src="./sfx/jump.wav" type="audio/wav"></audio>
+		<audio id="snd_scored"><source src="./sfx/score.wav" type="audio/wav"></audio>
+		<audio id="snd_counter"><source src="./sfx/counter.wav" type="audio/wav"></audio>
+
+		<img id="img_player" src="./img/player.png">
+		<img id="img_pipe" src="./img/pipe.png">
+		<img id="img_cloud" src="./img/cloud.png">
+	</div>
+
+	<div id="loadingscreen">
+		<noscript><h1>Javascript is disabled.</h1><style>.yesscript {display: none}</style></noscript>
+		<h1 class="yesscript" id="loadingtext">Loading...<br><span style="font-size: 0.5em">If this doesn't go away then an error might have occured. Check console using F12.</span></h1>
+	</div>
+
+</body>
+</html>

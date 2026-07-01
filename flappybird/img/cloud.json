@@ -1,0 +1,35 @@
+{
+    "sprite_size": [32, 32],
+    "scale": 4,
+
+    "animations": {
+        "default": {
+            "loop": false,
+            "frames": [[0,0,0]],
+            "next_animation": ["normal1", "normal2", "normal3"]
+        },
+        "secret": {
+            "loop": false,
+            "frames": [[0,0,0]],
+            "next_animation": [
+                "secret_heart", "secret_legacy", "secret_creeper",
+                "secret_goldfish", "secret_jeff", "secret_gaster",
+                "secret_buckshotroulette", "secret_hollowknight", "secret_oneshot"
+            ]
+        },
+
+        "normal1": {"loop": false, "frames": [[0,0,1]]},
+        "normal2": {"loop": false, "frames": [[32,0,1]]},
+        "normal3": {"loop": false, "frames": [[64,0,1]]},
+
+        "secret_heart": {"loop": false, "frames": [[96,0,1]]},
+        "secret_legacy": {"loop": false, "frames": [[0,32,1]]},
+        "secret_creeper": {"loop": false, "frames": [[32,32,1]]},
+        "secret_goldfish": {"loop": false, "frames": [[64,32,1]]},
+        "secret_jeff": {"loop": false, "frames": [[96,32,1]]},
+        "secret_gaster": {"loop": false, "frames": [[0,64,1]]},
+        "secret_buckshotroulette": {"loop": false, "frames": [[32,64,1]]},
+        "secret_hollowknight": {"loop": false, "frames": [[64,64,1]]},
+        "secret_oneshot": {"loop": false, "frames": [[96,64,1]]}
+    }
+}
