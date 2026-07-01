@@ -789,12 +789,26 @@ if (!(canvas instanceof HTMLCanvasElement)) {
 }
 
 // oops, forgot that this has to be after canvas
+
+// onmousedown also triggers on touch *release*, so pointerdown it is.
+/*
 canvas.onmousedown = function() {
 	tap(0, 0)
+	console.log("Mouse Down", event)
 }
 canvas.ontouchstart = function() {
+	console.log("Touch Down", event)
 	tap(0, 0)
-}
+}*/
+
+canvas.addEventListener("pointerdown", (e) => {
+	tap(0,0)
+})
+
+window.addEventListener("blur", (e) => {
+	btn_pause()
+})
+
 document.addEventListener("keydown", () => {
 	switch(event.key) {
 		case "Pause":
